@@ -1,2 +1,20 @@
-idf_component_register(SRCS "app_main.c"
-                    INCLUDE_DIRS ".")
+set(
+    REQUIRES
+        coreMQTT
+        backoffAlgorithm
+        corePKCS11
+        Fleet-Provisioning-for-AWS-IoT-embedded-sdk
+        esp_wifi
+        wifi_provisioning
+        protocol_examples_common
+    )
+
+idf_component_register(
+    SRCS 
+        "app_main.c"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES
+        ${REQUIRES}
+        "spiffs"
+    )
