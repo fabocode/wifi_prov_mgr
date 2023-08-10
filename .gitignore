@@ -5,3 +5,5 @@ build/
 .vscode/
 sdkconfig
 sdkconfig.old
+*.key
+*.crt
