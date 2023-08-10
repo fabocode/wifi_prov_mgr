@@ -1,2 +1,6 @@
 dependencies:
   qrcode: "^0.1.0"
+  espressif/cbor:
+    version: ">=0.5.4,<1.0.0"
+    rules:
+      - if: "idf_version >=5.0"

@@ -7,11 +7,17 @@ set(
         esp_wifi
         wifi_provisioning
         protocol_examples_common
+        posix_compat
     )
 
 idf_component_register(
     SRCS 
         "app_main.c"
+        "fleet_provisioning_with_csr_demo.c"
+        "mqtt_operations.c"
+        "fleet_provisioning_serializer.c"
+        "pkcs11_operations.c"
+        "mbedtls_pkcs11_posix.c"
     INCLUDE_DIRS 
         "."
     REQUIRES
