@@ -113,6 +113,8 @@ static EventGroupHandle_t wifi_event_group;
 #define PROV_TRANSPORT_BLE      "ble"
 #define QRCODE_BASE_URL         "https://espressif.github.io/esp-jumpstart/qrcode.html"
 
+int aws_iot_demo_main( int argc, char ** argv );
+
 esp_vfs_spiffs_conf_t conf = {
   .base_path = "/spiffs",
   .partition_label = "spiffs_storage",
@@ -300,7 +302,7 @@ static void wifi_prov_print_qr(const char *name, const char *username, const cha
 void app_main(void)
 {
     filesystem_init();
-    
+
     /* Initialize NVS partition */
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -508,9 +510,15 @@ void app_main(void)
     /* Wait for Wi-Fi connection */
     xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_EVENT, false, true, portMAX_DELAY);
 
-    /* Start main application now */
-    while (1) {
-        ESP_LOGI(TAG, "Hello World!");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
+    aws_iot_demo_main(0,NULL);
+
+    vTaskDelay(pdMS_TO_TICKS(10 * 1000));
+
+    filesystem_deinit();
+
+    // /* Start main application now */
+    // while (1) {
+    //     ESP_LOGI(TAG, "Hello World!");
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // }
 }
