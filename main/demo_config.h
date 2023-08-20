@@ -32,7 +32,7 @@
 #define CONFIG_MQTT_NETWORK_BUFFER_SIZE 2048
 #define CONFIG_MQTT_BROKER_PORT 8883
 #define CONFIG_PROVISIONING_TEMPLATE_NAME "Claim_Template_Test"
-#define CONFIG_DEVICE_SERIAL_NUMBER "0000"
+#define CONFIG_DEVICE_SERIAL_NUMBER "0001"
 
 /**************************************************/
 /******* DO NOT CHANGE the following order ********/

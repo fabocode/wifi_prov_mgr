@@ -74,6 +74,9 @@
 #include "pkcs11_operations.h"
 #include "fleet_provisioning_serializer.h"
 
+#include "nvs.h"
+#include "nvs_flash.h"
+
 /**
  * These configurations are required. Throw compilation error if it is not
  * defined.
@@ -155,6 +158,21 @@ typedef enum
     ResponseAccepted,
     ResponseRejected
 } ResponseStatus_t;
+
+typedef struct AWS_Certs 
+{
+    uint8_t payloadBuffer[2048];
+    size_t payloadLength;
+
+    char certificate[2048];
+    size_t certificateLength;
+
+    char certificateId[64];
+    size_t certificateIdLength;
+
+    char ownershipToken[512];
+    size_t ownershipTokenLength;
+} AWS_Certs;
 
 /*-----------------------------------------------------------*/
 
@@ -488,6 +506,40 @@ int aws_iot_demo_main( int argc,
     ( void ) argc;
     ( void ) argv;
 
+    // Initiliaze certificate reading in the NVS partition 
+    ESP_ERROR_CHECK(nvs_flash_init());
+
+    nvs_handle aws_certs_handle;
+    ESP_ERROR_CHECK(nvs_open("aws_certs", NVS_READWRITE, &aws_certs_handle));
+
+    AWS_Certs aws_certs;
+    size_t aws_certs_size = sizeof(AWS_Certs);
+    esp_err_t ret = nvs_get_blob(aws_certs_handle, "aws_certs", (void *)&aws_certs, &aws_certs_size);
+    LogInfo( ( "Actual aws certs size=%d returned from NVS=%d", ( int ) sizeof(AWS_Certs), ( int ) aws_certs_size ) );
+
+    bool certificate_found = false;
+    switch(ret)
+    {
+        case ESP_ERR_NOT_FOUND:
+        case ESP_ERR_NVS_NOT_FOUND:
+            ESP_LOGE("app", "key not set");
+            certificate_found = false;
+            break;
+        case ESP_OK:
+            ESP_LOGI("app", "certificate found!");
+            certificate_found = true;
+
+            LogInfo( ( "NVS payloadBuffer: %.*s\nsize: %d", ( int ) aws_certs.payloadLength, aws_certs.payloadBuffer, ( int ) aws_certs.payloadLength ) );
+            LogInfo( ( "NVS certificate: %.*s\nsize: %d", ( int ) aws_certs.certificateLength, aws_certs.certificate, ( int ) aws_certs.certificateLength ) );
+            LogInfo( ( "NVS certificate with Id: %.*s\nsize: %d", ( int ) aws_certs.certificateIdLength, aws_certs.certificateId, ( int ) aws_certs.certificateIdLength ) );
+            LogInfo( ( "NVS ownershipToken: %.*s\nsize: %d", ( int ) aws_certs.ownershipTokenLength, aws_certs.ownershipToken, ( int ) aws_certs.ownershipTokenLength ) );
+            break;
+        default:
+            certificate_found = false;
+            ESP_LOGE("app", "Error (%s) opening NVS handle\n", esp_err_to_name(ret));
+    }
+
+
     do
     {
         /* Initialize the buffer lengths to their max lengths. */
@@ -619,7 +671,27 @@ int aws_iot_demo_main( int argc,
 
             if( status == true )
             {
-                LogInfo( ( "Received certificate with Id: %.*s", ( int ) certificateIdLength, certificateId ) );
+                LogInfo( ( "Received payloadBuffer: %.*s\nsize: %d", ( int ) payloadLength, payloadBuffer, ( int ) payloadLength ) );
+                LogInfo( ( "Received certificate: %.*s\nsize: %d", ( int ) certificateLength, certificate, ( int ) certificateLength ) );
+                LogInfo( ( "Received certificate with Id: %.*s\nsize: %d", ( int ) certificateIdLength, certificateId, ( int ) certificateIdLength ) );
+                LogInfo( ( "Received ownershipToken: %.*s\nsize: %d", ( int ) ownershipTokenLength, ownershipToken, ( int ) ownershipTokenLength ) );
+
+                // AWS_Certs new_certs;
+                
+                memcpy(aws_certs.payloadBuffer, payloadBuffer, payloadLength);
+                aws_certs.payloadLength = payloadLength;
+                
+                memcpy(aws_certs.certificate, certificate, certificateLength);
+                aws_certs.certificateLength = certificateLength;
+                
+                memcpy(aws_certs.certificateId, certificateId, certificateIdLength);
+                aws_certs.certificateIdLength = certificateIdLength;
+                
+                memcpy(aws_certs.ownershipToken, ownershipToken, ownershipTokenLength);
+                aws_certs.ownershipTokenLength = ownershipTokenLength;
+
+                ESP_ERROR_CHECK(nvs_set_blob(aws_certs_handle, "aws_certs", (void *)&aws_certs, sizeof(AWS_Certs)));
+                ESP_ERROR_CHECK(nvs_commit(aws_certs_handle));
             }
         }
 
@@ -779,6 +851,8 @@ int aws_iot_demo_main( int argc,
     {
         LogInfo( ( "Demo completed successfully." ) );
     }
+
+    nvs_close(aws_certs_handle);
 
     return ( status == true ) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
