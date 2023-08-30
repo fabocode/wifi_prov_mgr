@@ -223,4 +223,96 @@
 #include "core_mqtt.h"
 #define MQTT_LIB    "core-mqtt@" MQTT_LIBRARY_VERSION
 
+/**
+ * These configurations are required. Throw compilation error if it is not
+ * defined.
+ */
+#ifndef PROVISIONING_TEMPLATE_NAME
+    #error "Please define PROVISIONING_TEMPLATE_NAME to the template name registered with AWS IoT Core in demo_config.h."
+#endif
+#ifndef CLAIM_CERT_PATH
+    #error "Please define path to claim certificate (CLAIM_CERT_PATH) in demo_config.h."
+#endif
+#ifndef CLAIM_PRIVATE_KEY_PATH
+    #error "Please define path to claim private key (CLAIM_PRIVATE_KEY_PATH) in demo_config.h."
+#endif
+#ifndef DEVICE_SERIAL_NUMBER
+    #error "Please define a serial number (DEVICE_SERIAL_NUMBER) in demo_config.h."
+#endif
+
+/**
+ * @brief The length of #PROVISIONING_TEMPLATE_NAME.
+ */
+#define PROVISIONING_TEMPLATE_NAME_LENGTH    ( ( uint16_t ) ( sizeof( PROVISIONING_TEMPLATE_NAME ) - 1 ) )
+
+/**
+ * @brief The length of #DEVICE_SERIAL_NUMBER.
+ */
+#define DEVICE_SERIAL_NUMBER_LENGTH          ( ( uint16_t ) ( sizeof( DEVICE_SERIAL_NUMBER ) - 1 ) )
+
+/**
+ * @brief Size of AWS IoT Thing name buffer.
+ *
+ * See https://docs.aws.amazon.com/iot/latest/apireference/API_CreateThing.html#iot-CreateThing-request-thingName
+ */
+#define MAX_THING_NAME_LENGTH                128
+
+/**
+ * @brief The maximum number of times to run the loop in this demo.
+ *
+ * @note The demo loop is attempted to re-run only if it fails in an iteration.
+ * Once the demo loop succeeds in an iteration, the demo exits successfully.
+ */
+#ifndef FLEET_PROV_MAX_DEMO_LOOP_COUNT
+    #define FLEET_PROV_MAX_DEMO_LOOP_COUNT    ( 3 )
+#endif
+
+/**
+ * @brief Time in seconds to wait between retries of the demo loop if
+ * demo loop fails.
+ */
+#define DELAY_BETWEEN_DEMO_RETRY_ITERATIONS_SECONDS    ( 5 )
+
+/**
+ * @brief Size of buffer in which to hold the certificate signing request (CSR).
+ */
+#define CSR_BUFFER_LENGTH                              2048
+
+/**
+ * @brief Size of buffer in which to hold the certificate.
+ */
+#define CERT_BUFFER_LENGTH                             2048
+
+/**
+ * @brief Size of buffer in which to hold the certificate id.
+ *
+ * See https://docs.aws.amazon.com/iot/latest/apireference/API_Certificate.html#iot-Type-Certificate-certificateId
+ */
+#define CERT_ID_BUFFER_LENGTH                          64
+
+/**
+ * @brief Size of buffer in which to hold the certificate ownership token.
+ */
+#define OWNERSHIP_TOKEN_BUFFER_LENGTH                  512
+
+
+typedef struct AWS_Certs 
+{
+    uint8_t payloadBuffer[NETWORK_BUFFER_SIZE];
+    size_t payloadLength;
+
+    char certificate[CERT_BUFFER_LENGTH];
+    size_t certificateLength;
+
+    char certificateId[CERT_ID_BUFFER_LENGTH];
+    size_t certificateIdLength;
+
+    char ownershipToken[OWNERSHIP_TOKEN_BUFFER_LENGTH];
+    size_t ownershipTokenLength;
+
+    char thingName[ MAX_THING_NAME_LENGTH ];
+    size_t thingNameLength;
+} AWS_Certs;
+
+
 #endif /* ifndef DEMO_CONFIG_H_ */
