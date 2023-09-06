@@ -57,6 +57,9 @@
 /* Clock for timer. */
 #include "clock.h"
 
+/*Include coreJSON library. */
+#include "core_json.h"
+
 /**
  * These configurations are required. Throw compilation error if the below
  * configs are not defined.
@@ -230,9 +233,22 @@ static uint16_t globalUnsubscribePacketIdentifier = 0U;
 static PublishPackets_t outgoingPublishPackets[ MAX_OUTGOING_PUBLISHES ] = { 0 };
 
 /**
+ * @brief Array to keep subscription topics.
+ * Used to re-subscribe to topics that failed initial subscription attempts.
+ */
+static MQTTSubscribeInfo_t pGlobalSubscriptionList[ 1 ];
+
+/**
  * @brief The network buffer must remain valid for the lifetime of the MQTT context.
  */
 static uint8_t buffer[ NETWORK_BUFFER_SIZE ];
+
+/**
+ * @brief Status of latest Subscribe ACK;
+ * it is updated every time the callback function processes a Subscribe ACK
+ * and accounts for subscription to a single topic.
+ */
+static MQTTSubAckStatus_t globalSubAckStatus = MQTTSubAckFailure;
 
 /**
  * @brief The MQTT context used for MQTT operation.
@@ -490,8 +506,10 @@ static bool getNextFreeIndexForOutgoingPublishes( uint8_t * pIndex )
     {
         /* A free index is marked by invalid packet id. Check if the the index
          * has a free slot. */
+        LogInfo( ( "free index looking for free slot." ) );
         if( outgoingPublishPackets[ index ].packetId == MQTT_PACKET_ID_INVALID )
         {
+            LogInfo( ( "found it." ) );
             returnStatus = true;
             break;
         }
@@ -683,6 +701,208 @@ static bool handlePublishResend( MQTTContext_t * pMqttContext )
 
     return returnStatus;
 }
+
+/*-----------------------------------------------------------*/
+
+int parseLightCmd(char *msg, int len)
+{
+    JSONStatus_t result;
+    char *value;
+    size_t valueLen;
+
+    // Calling JSON_Validate() is not necessary if the document is guaranteed to be valid.
+    result = JSON_Validate( 
+            msg, 
+            len );
+
+    if(result == JSONSuccess)
+    {
+        ESP_LOGI("MQTTParser", "JSON is valid. Parsing JSON");
+        result = JSON_Search( 
+            msg, 
+            len, 
+            "cmd", 
+            3, 
+            &value, 
+            &valueLen );
+    }
+    
+    // if(result == JSONSuccess)
+    // {
+    //     // The pointer "value" will point to a location in the "buffer".
+    //     char save = value[ valueLen ];
+
+    //     // After saving the character, set it to a null byte for printing.
+    //     value[ valueLen ] = '\0';
+        
+    //     ESP_LOGI("MQTTParser", "Found: %s -> %s", "cmd", value);
+    //     bool state = (strcmp(value, "ON") == 0) ? true : false;
+    //     // mqttSetLightState(state);
+    //     app_driver_button_set(state);
+
+    //     // TODO: Check if the comparison is correct. 
+        
+    //     // Restore the character at the end of the value.
+    //     value[ valueLen ] = save;
+
+    // }
+    // else
+    // {
+    //     result = JSONNotFound;
+    // }
+    return result;
+}
+
+/*-----------------------------------------------------------*/
+
+void handleIncomingPublish( MQTTPublishInfo_t * pPublishInfo,
+                                   uint16_t packetIdentifier )
+{
+    assert( pPublishInfo != NULL );
+
+    /* Process incoming Publish. */
+    LogInfo( ( "Incoming QOS : %d.", pPublishInfo->qos ) );
+
+    /* Verify the received publish is for the topic we have subscribed to. */
+    if( ( pPublishInfo->topicNameLength == MQTT_LIGHT_COMMAND_TOPIC_LENGTH ) &&
+        ( 0 == strncmp( MQTT_LIGHT_COMMAND_TOPIC,
+                        pPublishInfo->pTopicName,
+                        pPublishInfo->topicNameLength ) ) )
+    {
+        LogInfo( ( "Incoming Publish Topic Name: %.*s matches subscribed topic.\n"
+                   "Incoming Publish message Packet Id is %u.\n"
+                   "Incoming Publish Message : %.*s.\n\n",
+                   pPublishInfo->topicNameLength,
+                   pPublishInfo->pTopicName,
+                   packetIdentifier,
+                   ( int ) pPublishInfo->payloadLength,
+                   ( const char * ) pPublishInfo->pPayload ) );
+        
+        // int ret = parseLightCmd(( char * ) pPublishInfo->pPayload, ( int ) pPublishInfo->payloadLength);
+        // if (ret == JSONSuccess)
+        // {
+        //     ESP_LOGI("MQTTParser", "JSON worked correctly.");
+        // }
+        // else
+        // {
+        //     ESP_LOGE("MQTTParser", "JSON didn't work.");
+        // }
+        
+    }
+    else
+    {
+        LogInfo( ( "Incoming Publish Topic Name: %.*s does not match subscribed topic.",
+                   pPublishInfo->topicNameLength,
+                   pPublishInfo->pTopicName ) );
+        LogInfo( ( "Incoming Publish Topic Name: %.*s matches subscribed topic.\n"
+                   "Incoming Publish message Packet Id is %u.\n"
+                   "Incoming Publish Message : %.*s.\n\n",
+                   pPublishInfo->topicNameLength,
+                   pPublishInfo->pTopicName,
+                   packetIdentifier,
+                   ( int ) pPublishInfo->payloadLength,
+                   ( const char * ) pPublishInfo->pPayload ) );
+    }
+}
+
+/*-----------------------------------------------------------*/
+
+static void updateSubAckStatus( MQTTPacketInfo_t * pPacketInfo )
+{
+    uint8_t * pPayload = NULL;
+    size_t pSize = 0;
+
+    MQTTStatus_t mqttStatus = MQTT_GetSubAckStatusCodes( pPacketInfo, &pPayload, &pSize );
+
+    /* MQTT_GetSubAckStatusCodes always returns success if called with packet info
+     * from the event callback and non-NULL parameters. */
+    assert( mqttStatus == MQTTSuccess );
+
+    /* Suppress unused variable warning when asserts are disabled in build. */
+    ( void ) mqttStatus;
+
+    /* Demo only subscribes to one topic, so only one status code is returned. */
+    globalSubAckStatus = ( MQTTSubAckStatus_t ) pPayload[ 0 ];
+}
+
+/*-----------------------------------------------------------*/
+
+static int handleResubscribe( MQTTContext_t * pMqttContext )
+{
+    int returnStatus = EXIT_SUCCESS;
+    MQTTStatus_t mqttStatus = MQTTSuccess;
+    BackoffAlgorithmStatus_t backoffAlgStatus = BackoffAlgorithmSuccess;
+    BackoffAlgorithmContext_t retryParams;
+    uint16_t nextRetryBackOff = 0U;
+
+    assert( pMqttContext != NULL );
+
+    /* Initialize retry attempts and interval. */
+    BackoffAlgorithm_InitializeParams( &retryParams,
+                                       CONNECTION_RETRY_BACKOFF_BASE_MS,
+                                       CONNECTION_RETRY_MAX_BACKOFF_DELAY_MS,
+                                       CONNECTION_RETRY_MAX_ATTEMPTS );
+
+    do
+    {
+        /* Send SUBSCRIBE packet.
+         * Note: reusing the value specified in globalSubscribePacketIdentifier is acceptable here
+         * because this function is entered only after the receipt of a SUBACK, at which point
+         * its associated packet id is free to use. */
+        mqttStatus = MQTT_Subscribe( pMqttContext,
+                                     pGlobalSubscriptionList,
+                                     sizeof( pGlobalSubscriptionList ) / sizeof( MQTTSubscribeInfo_t ),
+                                     globalSubscribePacketIdentifier );
+
+        if( mqttStatus != MQTTSuccess )
+        {
+            LogError( ( "Failed to send SUBSCRIBE packet to broker with error = %s.",
+                        MQTT_Status_strerror( mqttStatus ) ) );
+            returnStatus = EXIT_FAILURE;
+            break;
+        }
+
+        LogInfo( ( "SUBSCRIBE sent for topic %.*s to broker.\n\n",
+                   MQTT_LIGHT_COMMAND_TOPIC_LENGTH,
+                   MQTT_LIGHT_COMMAND_TOPIC ) );
+
+        /* Process incoming packet. */
+        returnStatus = waitForPacketAck( pMqttContext,
+                                         globalSubscribePacketIdentifier,
+                                         MQTT_PROCESS_LOOP_TIMEOUT_MS );
+
+        if( returnStatus == EXIT_FAILURE )
+        {
+            break;
+        }
+
+        /* Check if recent subscription request has been rejected. globalSubAckStatus is updated
+         * in eventCallback to reflect the status of the SUBACK sent by the broker. It represents
+         * either the QoS level granted by the server upon subscription, or acknowledgement of
+         * server rejection of the subscription request. */
+        if( globalSubAckStatus == MQTTSubAckFailure )
+        {
+            /* Generate a random number and get back-off value (in milliseconds) for the next re-subscribe attempt. */
+            backoffAlgStatus = BackoffAlgorithm_GetNextBackoff( &retryParams, generateRandomNumber(), &nextRetryBackOff );
+
+            if( backoffAlgStatus == BackoffAlgorithmRetriesExhausted )
+            {
+                LogError( ( "Subscription to topic failed, all attempts exhausted." ) );
+                returnStatus = EXIT_FAILURE;
+            }
+            else if( backoffAlgStatus == BackoffAlgorithmSuccess )
+            {
+                LogWarn( ( "Server rejected subscription request. Retrying "
+                           "connection after %hu ms backoff.",
+                           ( unsigned short ) nextRetryBackOff ) );
+                Clock_SleepMs( nextRetryBackOff );
+            }
+        }
+    } while( ( globalSubAckStatus == MQTTSubAckFailure ) && ( backoffAlgStatus == BackoffAlgorithmSuccess ) );
+
+    return returnStatus;
+}
+
 /*-----------------------------------------------------------*/
 
 static bool waitForPacketAck( MQTTContext_t * pMqttContext,
@@ -940,27 +1160,27 @@ bool SubscribeToTopic( const char * pTopicFilter,
     bool returnStatus = false;
     MQTTStatus_t mqttStatus;
     MQTTContext_t * pMqttContext = &mqttContext;
-    MQTTSubscribeInfo_t pSubscriptionList[ 1 ];
+    
 
     assert( pMqttContext != NULL );
     assert( pTopicFilter != NULL );
     assert( topicFilterLength > 0 );
 
     /* Start with everything at 0. */
-    ( void ) memset( ( void * ) pSubscriptionList, 0x00, sizeof( pSubscriptionList ) );
+    ( void ) memset( ( void * ) pGlobalSubscriptionList, 0x00, sizeof( pGlobalSubscriptionList ) );
 
     /* This example subscribes to only one topic and uses QOS1. */
-    pSubscriptionList[ 0 ].qos = MQTTQoS1;
-    pSubscriptionList[ 0 ].pTopicFilter = pTopicFilter;
-    pSubscriptionList[ 0 ].topicFilterLength = topicFilterLength;
+    pGlobalSubscriptionList[ 0 ].qos = MQTTQoS1;
+    pGlobalSubscriptionList[ 0 ].pTopicFilter = pTopicFilter;
+    pGlobalSubscriptionList[ 0 ].topicFilterLength = topicFilterLength;
 
     /* Generate packet identifier for the SUBSCRIBE packet. */
     globalSubscribePacketIdentifier = MQTT_GetPacketId( pMqttContext );
 
     /* Send SUBSCRIBE packet. */
     mqttStatus = MQTT_Subscribe( pMqttContext,
-                                 pSubscriptionList,
-                                 sizeof( pSubscriptionList ) / sizeof( MQTTSubscribeInfo_t ),
+                                 pGlobalSubscriptionList,
+                                 sizeof( pGlobalSubscriptionList ) / sizeof( MQTTSubscribeInfo_t ),
                                  globalSubscribePacketIdentifier );
 
     if( mqttStatus != MQTTSuccess )
@@ -988,6 +1208,60 @@ bool SubscribeToTopic( const char * pTopicFilter,
 
     return returnStatus;
 }
+
+/*-----------------------------------------------------------*/
+
+int subscribeToLightTopic( const char * pTopicFilter,
+                       uint16_t topicFilterLength )
+{
+    int returnStatus = EXIT_SUCCESS;
+    MQTTContext_t * pMqttContext = &mqttContext;
+    const uint16_t thingTopicLength = topicFilterLength + MQTT_LIGHT_COMMAND_TOPIC_LENGTH;
+
+    char thingTopic[thingTopicLength];
+    memcpy(thingTopic, pTopicFilter, thingTopicLength);
+    strcat(thingTopic, MQTT_LIGHT_COMMAND_TOPIC);
+
+    const uint8_t MAX_SUBSCRIPTION_TRIES = 5;
+    for (uint8_t i = 0; i < MAX_SUBSCRIPTION_TRIES; i++)
+    {
+        if( returnStatus == EXIT_SUCCESS )
+        {
+            /* The client is now connected to the broker. Subscribe to the topic
+            * as specified in MQTT_LIGHT_COMMAND_TOPIC at the top of this file by sending a
+            * subscribe packet. This client will then publish to the same topic it
+            * subscribed to, so it will expect all the messages it sends to the broker
+            * to be sent back to it from the broker. This demo uses QOS1 in Subscribe,
+            * therefore, the Publish messages received from the broker will have QOS1. */
+            LogInfo( ( "Subscribing to the MQTT topic %.*s.",
+                    thingTopicLength,
+                    thingTopic ) );
+            
+            returnStatus = SubscribeToTopic( thingTopic, thingTopicLength );
+        }
+
+        /* Check if recent subscription request has been rejected. globalSubAckStatus is updated
+        * in eventCallback to reflect the status of the SUBACK sent by the broker. */
+        if( ( returnStatus == EXIT_SUCCESS ) && ( globalSubAckStatus == MQTTSubAckFailure ) )
+        {
+            /* If server rejected the subscription request, attempt to resubscribe to topic.
+             * Attempts are made according to the exponential backoff retry strategy
+             * implemented in retryUtils. */
+            LogInfo( ( "Server rejected initial subscription request. Attempting to re-subscribe to topic %.*s.",
+                       thingTopicLength,
+                       thingTopic ) );
+            returnStatus = handleResubscribe( pMqttContext );
+        }
+
+        if (returnStatus == EXIT_SUCCESS)
+        {
+            break;
+        }
+    }
+
+    return returnStatus;
+}
+
 /*-----------------------------------------------------------*/
 
 bool UnsubscribeFromTopic( const char * pTopicFilter,
@@ -996,27 +1270,26 @@ bool UnsubscribeFromTopic( const char * pTopicFilter,
     bool returnStatus = false;
     MQTTStatus_t mqttStatus;
     MQTTContext_t * pMqttContext = &mqttContext;
-    MQTTSubscribeInfo_t pSubscriptionList[ 1 ];
 
     assert( pMqttContext != NULL );
     assert( pTopicFilter != NULL );
     assert( topicFilterLength > 0 );
 
     /* Start with everything at 0. */
-    ( void ) memset( ( void * ) pSubscriptionList, 0x00, sizeof( pSubscriptionList ) );
+    ( void ) memset( ( void * ) pGlobalSubscriptionList, 0x00, sizeof( pGlobalSubscriptionList ) );
 
     /* This example subscribes to only one topic and uses QOS1. */
-    pSubscriptionList[ 0 ].qos = MQTTQoS1;
-    pSubscriptionList[ 0 ].pTopicFilter = pTopicFilter;
-    pSubscriptionList[ 0 ].topicFilterLength = topicFilterLength;
+    pGlobalSubscriptionList[ 0 ].qos = MQTTQoS1;
+    pGlobalSubscriptionList[ 0 ].pTopicFilter = pTopicFilter;
+    pGlobalSubscriptionList[ 0 ].topicFilterLength = topicFilterLength;
 
     /* Generate packet identifier for the UNSUBSCRIBE packet. */
     globalUnsubscribePacketIdentifier = MQTT_GetPacketId( pMqttContext );
 
     /* Send UNSUBSCRIBE packet. */
     mqttStatus = MQTT_Unsubscribe( pMqttContext,
-                                   pSubscriptionList,
-                                   sizeof( pSubscriptionList ) / sizeof( MQTTSubscribeInfo_t ),
+                                   pGlobalSubscriptionList,
+                                   sizeof( pGlobalSubscriptionList ) / sizeof( MQTTSubscribeInfo_t ),
                                    globalUnsubscribePacketIdentifier );
 
     if( mqttStatus != MQTTSuccess )
@@ -1061,14 +1334,14 @@ bool PublishToTopic( const char * pTopicFilter,
      * stored for supporting a resend if a network connection is broken before
      * receiving a PUBACK. */
     returnStatus = getNextFreeIndexForOutgoingPublishes( &publishIndex );
-
+    LogInfo( ( "keep working" ) );
     if( returnStatus == false )
     {
         LogError( ( "Unable to find a free spot for outgoing PUBLISH message." ) );
     }
     else
     {
-        LogDebug( ( "Published payload: %.*s",
+        LogInfo( ( "Published payload: %.*s",
                     ( int ) payloadLength,
                     ( const char * ) pPayload ) );
 
@@ -1089,14 +1362,14 @@ bool PublishToTopic( const char * pTopicFilter,
 
         if( mqttStatus != MQTTSuccess )
         {
-            LogError( ( "Failed to send PUBLISH packet to broker with error = %s.",
+            LogInfo( ( "Failed to send PUBLISH packet to broker with error = %s.",
                         MQTT_Status_strerror( mqttStatus ) ) );
             cleanupOutgoingPublishAt( publishIndex );
             returnStatus = false;
         }
         else
         {
-            LogDebug( ( "PUBLISH sent for topic %.*s to broker with packet ID %u.",
+            LogInfo( ( "PUBLISH sent for topic %.*s to broker with packet ID %u.",
                         topicFilterLength,
                         pTopicFilter,
                         outgoingPublishPackets[ publishIndex ].packetId ) );

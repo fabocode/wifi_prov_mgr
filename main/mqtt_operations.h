@@ -30,6 +30,33 @@
 #include "core_pkcs11.h"
 
 /**
+ * @brief The topic to subscribe and publish to in the example.
+ *
+ * The topic name starts with the client identifier to ensure that each demo
+ * interacts with a unique topic name.
+ */
+#define MQTT_LIGHT_COMMAND_TOPIC          "/light/cmd"
+
+/**
+ * @brief Length of client MQTT topic.
+ */
+#define MQTT_LIGHT_COMMAND_TOPIC_LENGTH   ( ( uint16_t ) ( sizeof( MQTT_LIGHT_COMMAND_TOPIC ) - 1 ) )
+
+/**
+ * @brief The topic to subscribe and publish to in the example.
+ *
+ * The topic name starts with the client identifier to ensure that each demo
+ * interacts with a unique topic name.
+ */
+#define MQTT_LIGHT_TOPIC                  "/light/status"
+
+/**
+ * @brief Length of client MQTT topic.
+ */
+#define MQTT_LIGHT_TOPIC_LENGTH           ( ( uint16_t ) ( sizeof( MQTT_LIGHT_TOPIC ) - 1 ) )
+
+
+/**
  * @brief Application callback type to handle the incoming publishes.
  *
  * @param[in] pPublishInfo Pointer to publish info of the incoming publish.
@@ -74,6 +101,12 @@ bool DisconnectMqttSession( void );
  */
 bool SubscribeToTopic( const char * pTopicFilter,
                        uint16_t topicFilterLength );
+
+int subscribeToLightTopic( const char * pTopicFilter,
+                       uint16_t topicFilterLength );
+
+void handleIncomingPublish( MQTTPublishInfo_t * pPublishInfo,
+            uint16_t packetIdentifier );
 
 /**
  * @brief Unsubscribe from a MQTT topic filter.

@@ -1,6 +1,7 @@
 set(
     REQUIRES
         coreMQTT
+        coreJSON
         backoffAlgorithm
         corePKCS11
         Fleet-Provisioning-for-AWS-IoT-embedded-sdk
