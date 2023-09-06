@@ -800,9 +800,16 @@ int aws_iot_demo_main( int argc,
             // }
             for(;;)
             {
+                if(PublishToTopic(thingName, thingNameLength, "hello-2", 8))
+                {
+                    LogInfo(("message sent"));
+                }
+                else
+                {
+                    LogInfo(("not working correctly"));
+                }
                 waitForResponse();
-                PublishToTopic("ESP32S3_Thing_Device_0001/light/status", 39, "hello", 6);
-                Clock_SleepMs(3000);
+                Clock_SleepMs(5000);
             }
         }
 
