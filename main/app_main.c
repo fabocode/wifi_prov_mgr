@@ -35,6 +35,7 @@
 #include <wifi_provisioning/scheme_softap.h>
 #endif /* CONFIG_EXAMPLE_PROV_TRANSPORT_SOFTAP */
 #include "qrcode.h"
+#include "uart_echo.h"
 
 static const char *TAG = "app";
 
@@ -313,6 +314,9 @@ void app_main(void)
         /* Retry nvs_flash_init */
         ESP_ERROR_CHECK(nvs_flash_init());
     }
+
+    /* Initialzie UART */
+    uart_init();
 
     /* Initialize TCP/IP */
     ESP_ERROR_CHECK(esp_netif_init());

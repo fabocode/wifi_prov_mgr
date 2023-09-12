@@ -81,6 +81,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "core_json.h"
+#include "uart_echo.h"
 
 /**
  * @brief Status values of the Fleet Provisioning response.
@@ -800,16 +801,18 @@ int aws_iot_demo_main( int argc,
             // }
             for(;;)
             {
-                if(PublishToTopic(thingName, thingNameLength, "hello-2", 8))
-                {
-                    LogInfo(("message sent"));
-                }
-                else
-                {
-                    LogInfo(("not working correctly"));
-                }
+                // if(PublishToTopic(thingName, thingNameLength, "hello-2", 8))
+                // {
+                //     LogInfo(("message sent"));
+                // }
+                // else
+                // {
+                //     LogInfo(("not working correctly"));
+                // }
                 waitForResponse();
-                Clock_SleepMs(5000);
+                char buff[3];
+                size_t l = 3;
+                bool listened = uart_listen(buff, l);
             }
         }
 
