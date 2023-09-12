@@ -417,6 +417,30 @@ static bool unsubscribeFromRegisterThingResponseTopics( void )
 
     return status;
 }
+
+/*-----------------------------------------------------------*/
+
+int mqtt_subscribe(void)
+{
+    return subscribeToLightTopic(thingName, thingNameLength);
+}
+
+/*-----------------------------------------------------------*/
+
+bool mqtt_publish(const char *msg, uint16_t msg_len)
+{
+    bool ret = false;
+    const uint16_t TopicLength = thingNameLength + MQTT_LIGHT_TOPIC_LENGTH;
+
+    char thingTopic[TopicLength];
+    memcpy(thingTopic, thingName, TopicLength);
+    strcat(thingTopic, MQTT_LIGHT_TOPIC);
+
+    ret = PublishToTopic(thingTopic, TopicLength, msg, msg_len);
+
+    return ret;
+}
+
 /*-----------------------------------------------------------*/
 
 /* This example uses a single application task, which shows that how to use
@@ -790,29 +814,18 @@ int aws_iot_demo_main( int argc,
 
         if(connectionEstablished == true)
         {
-            status = subscribeToLightTopic(thingName, thingNameLength);
-            if(status == EXIT_SUCCESS)
-            {
-                LogInfo( ( "Sucessfully Subscription." ) );
-            }
-            // else
-            // {
-            //     LogInfo( ( "Failed Subscription." ) );
-            // }
+            mqtt_subscribe();
+
             for(;;)
             {
-                // if(PublishToTopic(thingName, thingNameLength, "hello-2", 8))
-                // {
-                //     LogInfo(("message sent"));
-                // }
-                // else
-                // {
-                //     LogInfo(("not working correctly"));
-                // }
                 waitForResponse();
-                char buff[3];
-                size_t l = 3;
-                bool listened = uart_listen(buff, l);
+                char msg[BUF_SIZE];
+                size_t len = BUF_SIZE;
+                bool listened = uart_listen(msg, len);
+                if(listened)
+                {
+                    mqtt_publish(msg, strlen(msg));
+                }
             }
         }
 

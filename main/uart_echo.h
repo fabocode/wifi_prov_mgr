@@ -2,6 +2,7 @@
 #define UART_ECHO
 #include <stdio.h>
 #include <stdbool.h>
+#include "core_json.h"
 
 /**
  * This is an example which echos any data it receives on configured UART back to the sender,
@@ -35,5 +36,7 @@
 void uart_init(void);
 
 bool uart_listen(char *rx_buf, size_t l);
+
+JSONStatus_t uart_write(const char *msg, size_t len);
 
 #endif // UART_ECHO 

@@ -60,6 +60,8 @@
 /*Include coreJSON library. */
 #include "core_json.h"
 
+#include "uart_echo.h"
+
 /**
  * These configurations are required. Throw compilation error if the below
  * configs are not defined.
@@ -293,6 +295,16 @@ static MQTTPubAckInfo_t pOutgoingPublishRecords[ OUTGOING_PUBLISH_RECORD_LEN ];
  *
  */
 static MQTTPubAckInfo_t pIncomingPublishRecords[ INCOMING_PUBLISH_RECORD_LEN ];
+
+/**
+ * @brief Buffer to hold the provisioned AWS IoT Thing name.
+ */
+static char subscribedTopicName[ MAX_THING_NAME_LENGTH ];
+
+/**
+ * @brief Length of the AWS IoT Thing name.
+ */
+static size_t subscribedTopicNameLength;
 /*-----------------------------------------------------------*/
 
 /**
@@ -764,8 +776,8 @@ void handleIncomingPublish( MQTTPublishInfo_t * pPublishInfo,
     LogInfo( ( "Incoming QOS : %d.", pPublishInfo->qos ) );
 
     /* Verify the received publish is for the topic we have subscribed to. */
-    if( ( pPublishInfo->topicNameLength == MQTT_LIGHT_COMMAND_TOPIC_LENGTH ) &&
-        ( 0 == strncmp( MQTT_LIGHT_COMMAND_TOPIC,
+    if( ( pPublishInfo->topicNameLength == (subscribedTopicNameLength) ) &&
+        ( 0 == strncmp( subscribedTopicName,
                         pPublishInfo->pTopicName,
                         pPublishInfo->topicNameLength ) ) )
     {
@@ -777,6 +789,12 @@ void handleIncomingPublish( MQTTPublishInfo_t * pPublishInfo,
                    packetIdentifier,
                    ( int ) pPublishInfo->payloadLength,
                    ( const char * ) pPublishInfo->pPayload ) );
+
+        JSONStatus_t res = uart_write(( const char * ) pPublishInfo->pPayload, ( size_t ) pPublishInfo->payloadLength);
+        if (res != JSONSuccess)
+        {
+            LogError(("Error writing msg to uart"));
+        }
         
         // int ret = parseLightCmd(( char * ) pPublishInfo->pPayload, ( int ) pPublishInfo->payloadLength);
         // if (ret == JSONSuccess)
@@ -794,14 +812,8 @@ void handleIncomingPublish( MQTTPublishInfo_t * pPublishInfo,
         LogInfo( ( "Incoming Publish Topic Name: %.*s does not match subscribed topic.",
                    pPublishInfo->topicNameLength,
                    pPublishInfo->pTopicName ) );
-        LogInfo( ( "Incoming Publish Topic Name: %.*s matches subscribed topic.\n"
-                   "Incoming Publish message Packet Id is %u.\n"
-                   "Incoming Publish Message : %.*s.\n\n",
-                   pPublishInfo->topicNameLength,
-                   pPublishInfo->pTopicName,
-                   packetIdentifier,
-                   ( int ) pPublishInfo->payloadLength,
-                   ( const char * ) pPublishInfo->pPayload ) );
+        
+        
     }
 }
 
@@ -1216,11 +1228,10 @@ int subscribeToLightTopic( const char * pTopicFilter,
 {
     int returnStatus = EXIT_SUCCESS;
     MQTTContext_t * pMqttContext = &mqttContext;
-    const uint16_t thingTopicLength = topicFilterLength + MQTT_LIGHT_COMMAND_TOPIC_LENGTH;
+    subscribedTopicNameLength = topicFilterLength + MQTT_LIGHT_COMMAND_TOPIC_LENGTH;
 
-    char thingTopic[thingTopicLength];
-    memcpy(thingTopic, pTopicFilter, thingTopicLength);
-    strcat(thingTopic, MQTT_LIGHT_COMMAND_TOPIC);
+    memcpy(subscribedTopicName, pTopicFilter, subscribedTopicNameLength);
+    strcat(subscribedTopicName, MQTT_LIGHT_COMMAND_TOPIC);
 
     const uint8_t MAX_SUBSCRIPTION_TRIES = 5;
     for (uint8_t i = 0; i < MAX_SUBSCRIPTION_TRIES; i++)
@@ -1234,10 +1245,10 @@ int subscribeToLightTopic( const char * pTopicFilter,
             * to be sent back to it from the broker. This demo uses QOS1 in Subscribe,
             * therefore, the Publish messages received from the broker will have QOS1. */
             LogInfo( ( "Subscribing to the MQTT topic %.*s.",
-                    thingTopicLength,
-                    thingTopic ) );
+                    subscribedTopicNameLength,
+                    subscribedTopicName ) );
             
-            returnStatus = SubscribeToTopic( thingTopic, thingTopicLength );
+            returnStatus = SubscribeToTopic( subscribedTopicName, subscribedTopicNameLength );
         }
 
         /* Check if recent subscription request has been rejected. globalSubAckStatus is updated
@@ -1248,15 +1259,17 @@ int subscribeToLightTopic( const char * pTopicFilter,
              * Attempts are made according to the exponential backoff retry strategy
              * implemented in retryUtils. */
             LogInfo( ( "Server rejected initial subscription request. Attempting to re-subscribe to topic %.*s.",
-                       thingTopicLength,
-                       thingTopic ) );
+                       subscribedTopicNameLength,
+                       subscribedTopicName ) );
             returnStatus = handleResubscribe( pMqttContext );
         }
 
         if (returnStatus == EXIT_SUCCESS)
         {
+            LogInfo( ( "Successfully subscribed!" ) );
             break;
         }
+           LogInfo( ( "Failed, try again! %d",  returnStatus ) );
     }
 
     return returnStatus;
