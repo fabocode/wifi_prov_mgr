@@ -9,6 +9,7 @@ set(
         wifi_provisioning
         protocol_examples_common
         posix_compat
+        driver
     )
 
 idf_component_register(
@@ -19,6 +20,7 @@ idf_component_register(
         "fleet_provisioning_serializer.c"
         "pkcs11_operations.c"
         "mbedtls_pkcs11_posix.c"
+        "uart_echo.c"
     INCLUDE_DIRS 
         "."
     REQUIRES
