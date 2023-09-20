@@ -5,6 +5,7 @@ set(
         backoffAlgorithm
         corePKCS11
         Fleet-Provisioning-for-AWS-IoT-embedded-sdk
+        Device-Shadow-for-AWS-IoT-embedded-sdk
         esp_wifi
         wifi_provisioning
         protocol_examples_common

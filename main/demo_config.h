@@ -295,6 +295,32 @@
  */
 #define OWNERSHIP_TOKEN_BUFFER_LENGTH                  512
 
+/**
+ * @brief Predefined thing name.
+ *
+ * This is the example predefine thing name and could be compiled in ROM code.
+ */
+#define THING_NAME           "ESP32S3_Thing_Device_0001"
+
+/**
+ * @brief The length of #THING_NAME.
+ */
+#define THING_NAME_LENGTH    ( ( uint16_t ) ( sizeof( THING_NAME ) - 1 ) )
+
+/**
+ * @brief Predefined shadow name.
+ *
+ * Defaults to unnamed "Classic" shadow. Change to a custom string to use a named shadow.
+ */
+#ifndef SHADOW_NAME
+    #define SHADOW_NAME    SHADOW_NAME_CLASSIC
+#endif
+
+/**
+ * @brief The length of #SHADOW_NAME.
+ */
+#define SHADOW_NAME_LENGTH    ( ( uint16_t ) ( sizeof( SHADOW_NAME ) - 1 ) )
+
 
 typedef struct AWS_Certs 
 {

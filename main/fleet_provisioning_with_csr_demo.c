@@ -94,6 +94,9 @@ typedef enum
 } ResponseStatus_t;
 
 
+
+// static aws_mqtt_state_t action;
+
 /*-----------------------------------------------------------*/
 
 /**
@@ -467,6 +470,7 @@ int aws_iot_demo_main( int argc,
     CK_SESSION_HANDLE p11Session;
     int demoRunCount = 0;
     CK_RV pkcs11ret = CKR_OK;
+    set_aws_action(PROVISIONING);   // Define which state we want to focus
 
     /* Silence compiler warnings about unused variables. */
     ( void ) argc;
@@ -792,8 +796,9 @@ int aws_iot_demo_main( int argc,
 
         if( status == true )
         {
+            set_aws_action(DEVICE_SHADOW);
             LogInfo( ( "Establishing MQTT session with provisioned certificate..." ) );
-            status = EstablishMqttSession( handleIncomingPublish,
+            status = EstablishMqttSession( eventCallback,
                                            p11Session,
                                            pkcs11configLABEL_DEVICE_CERTIFICATE_FOR_TLS,
                                            pkcs11configLABEL_DEVICE_PRIVATE_KEY_FOR_TLS );
@@ -814,19 +819,21 @@ int aws_iot_demo_main( int argc,
 
         if(connectionEstablished == true)
         {
-            mqtt_subscribe();
+            // mqtt_subscribe();
 
-            for(;;)
-            {
-                waitForResponse();
-                char msg[BUF_SIZE];
-                size_t len = BUF_SIZE;
-                bool listened = uart_listen(msg, len);
-                if(listened)
-                {
-                    mqtt_publish(msg, strlen(msg));
-                }
-            }
+            // for(;;)
+            // {
+            //     waitForResponse();
+            //     char msg[BUF_SIZE];
+            //     size_t len = BUF_SIZE;
+            //     bool listened = uart_listen(msg, len);
+            //     if(listened)
+            //     {
+            //         mqtt_publish(msg, strlen(msg));
+            //     }
+            // }
+         
+            device_shadow_demo();
         }
 
         /**** Finish **********************************************************/
